@@ -1,0 +1,119 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Keep Docker dependencies up to data
+  - package-ecosystem: "docker"
+    directory: "/"
+    target-branch: "env/dev"
+    schedule:
+      interval: "weekly"
+      # Check for Docker updates at 9 AM sydney
+      # Will be 9:00 AM AEST (April to October)
+      # Will be 9:00 AM AEDT (October to April)
+      day: "sunday"
+      time: "09:00"
+      timezone: "Australia/Sydney"
+    assignees:
+      - "ryarlagadda-wiq"
+    reviewers:
+      - "rghadiri-wiq"
+      - "ryarlagadda-wiq"
+      - "mnoor2-wiq"
+      - "aturner-wiq"
+    labels: ["dependencies", "docker"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(dependencies) [docker]"
+
+  # Keep GitHub Actions dependencies up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "env/dev"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Australia/Sydney"
+    assignees:
+      - "ryarlagadda-wiq"
+    reviewers:
+      - "rghadiri-wiq"
+      - "ryarlagadda-wiq"
+      - "mnoor2-wiq"
+      - "aturner-wiq"
+    labels: ["dependencies", "gha"]
+    commit-message:
+      prefix: "chore(dependencies) [github-actions]"
+    
+  # Keep NPM dependencies up to date
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "env/dev"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Australia/Sydney"
+    versioning-strategy: auto
+    assignees:
+      - "ryarlagadda-wiq"
+    reviewers:
+      - "rghadiri-wiq"
+      - "ryarlagadda-wiq"
+      - "mnoor2-wiq"
+      - "aturner-wiq"
+    labels: ["dependencies", "npm"]
+    groups:
+      eslint:
+        patterns:
+          - "eslint*" 
+    commit-message:
+      prefix: "chore(dependencies) [npm]"
+
+  # Keep Pip dependencies up to date
+  - package-ecosystem: "pip"
+    directory: "/"
+    target-branch: "env/dev"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Australia/Sydney"
+    versioning-strategy: auto
+    assignees:
+      - "ryarlagadda-wiq"
+    reviewers:
+      - "rghadiri-wiq"
+      - "ryarlagadda-wiq"
+      - "mnoor2-wiq"
+      - "aturner-wiq"
+    labels: ["dependencies", "pip"]
+    allow:
+      - dependency-type: "all"
+    commit-message:
+      prefix: "chore(dependencies) [pip]"
+
+  # Keep Terraform dependencies up to date
+  - package-ecosystem: "terraform"
+    directory: "/"
+    target-branch: "env/dev"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "09:00"
+      timezone: "Australia/Sydney"
+    assignees:
+      - "ryarlagadda-wiq"
+    reviewers:
+      - "rghadiri-wiq"
+      - "ryarlagadda-wiq"
+      - "mnoor2-wiq"
+      - "aturner-wiq"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "terraform"]
+    commit-message:
+      prefix: "chore(dependencies) [terraform]"
