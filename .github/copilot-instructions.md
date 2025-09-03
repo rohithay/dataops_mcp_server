@@ -1,6 +1,6 @@
-# fa_dim Project Copilot Instructions
+# dataops-mcp-server Project Copilot Instructions
 
-When responding to prompts about the fa_dim project:
+When responding to prompts about the dataops-mcp-server project:
 
 ## 1. Clarity First Approach
 
