@@ -154,7 +154,7 @@ dataops-mcp-server = "dataops_mcp_server.main:main"
 path = "src/version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dataops-mcp-server"]
+packages = ["src/dataops_mcp_server"]
 
 [tool.hatch.build.targets.sdist]
 include = [
