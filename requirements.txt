@@ -1,0 +1,3 @@
+gradio>=5.0.0
+huggingface_hub[mcp]>=0.32.0
+rohithay.dataops-mcp-server
