@@ -1,369 +1,364 @@
-{
-  "skill_name": "bigquery-cost-tool",
-  "description": "Evals for GetBigQueryCostsTool — covers parameter validation, cost summary math, trend detection, forecasting, optimization opportunity detection, and error handling.",
-  "evals": [
+<?xml version="1.0" encoding="UTF-8"?>
+<evals skill_name="bigquery-cost-tool" description="Evals for GetBigQueryCostsTool — covers parameter validation, cost summary math, trend detection, forecasting, optimization opportunity detection, and error handling.">
 
-    {
-      "id": 1,
-      "name": "Basic 7-day cost summary",
-      "prompt": "Given this cost data (evals/files/mock_cost_data.json), call _generate_cost_summary() and verify the returned dict. The input cost_data has total_cost=24.25, total_queries=2245, average_cost_per_query=0.0108.",
-      "expected_output": "A cost summary dict with correct total_cost_usd=24.25, total_queries=2245, and daily statistics (avg, min, max, std_dev) computed correctly from the 7 daily cost_usd values.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "total_cost_usd equals 24.25",
-        "total_queries equals 2245",
-        "daily_statistics.min_daily_cost equals 0.5 (the lowest day)",
-        "daily_statistics.max_daily_cost equals 7.5 (the highest day)",
-        "daily_statistics.average_daily_cost is approximately 3.464 (24.25 / 7)",
-        "daily_statistics.daily_std_deviation is a positive float",
-        "cost_efficiency_metrics.queries_per_dollar is a positive number",
-        "cost_efficiency_metrics.cost_per_gb is a positive number"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Cost Summary Math
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 2,
-      "name": "Trend analysis — increasing",
-      "prompt": "Using the mock_cost_data.json fixture (costs go from 0.625 on day 1 to 7.5 on day 7, a clear upward trend), call _analyze_trends() and verify the output correctly identifies an increasing trend.",
-      "expected_output": "trend_direction='increasing', a positive slope, correct weekly and monthly projections, and a volatility / cost_stability classification.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "trend_direction is 'increasing'",
-        "slope is a positive numeric value greater than 0.1",
-        "weekly_projection is approximately daily_average * 7",
-        "monthly_projection is approximately daily_average * 30",
-        "volatility is a non-negative float",
-        "cost_stability is one of 'stable', 'moderate', or 'volatile'",
-        "daily_average is approximately 3.464"
-      ]
-    },
+  <eval id="1" name="Basic 7-day cost summary">
+    <prompt>Given this cost data (evals/files/mock_cost_data.json), call _generate_cost_summary() and verify the returned dict. The input cost_data has total_cost=24.25, total_queries=2245, average_cost_per_query=0.0108.</prompt>
+    <expected_output>A cost summary dict with correct total_cost_usd=24.25, total_queries=2245, and daily statistics (avg, min, max, std_dev) computed correctly from the 7 daily cost_usd values.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>total_cost_usd equals 24.25</expectation>
+      <expectation>total_queries equals 2245</expectation>
+      <expectation>daily_statistics.min_daily_cost equals 0.5 (the lowest day)</expectation>
+      <expectation>daily_statistics.max_daily_cost equals 7.5 (the highest day)</expectation>
+      <expectation>daily_statistics.average_daily_cost is approximately 3.464 (24.25 / 7)</expectation>
+      <expectation>daily_statistics.daily_std_deviation is a positive float</expectation>
+      <expectation>cost_efficiency_metrics.queries_per_dollar is a positive number</expectation>
+      <expectation>cost_efficiency_metrics.cost_per_gb is a positive number</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 3,
-      "name": "Trend analysis — high volatility",
-      "prompt": "Using mock_volatile_data.json (costs swing wildly between ~0.03 and 6.25 on alternating days), call _analyze_trends() and check that volatility is flagged as 'volatile'.",
-      "expected_output": "cost_stability='volatile' because the coefficient of variation far exceeds 0.5, and trend_direction should be 'stable' or 'decreasing' given the erratic pattern.",
-      "files": ["evals/files/mock_volatile_data.json"],
-      "expectations": [
-        "volatility is greater than 0.5",
-        "cost_stability equals 'volatile'",
-        "daily_average is a positive number",
-        "weekly_projection and monthly_projection are both present and positive"
-      ]
-    },
+  <eval id="23" name="Zero-cost period handling">
+    <prompt>Call _generate_cost_summary() with cost_data where total_cost=0.0, total_queries=0, and daily_costs is an empty list.</prompt>
+    <expected_output>Returns a valid summary dict with all zero values; no ZeroDivisionError is raised.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>total_cost_usd is 0.0</expectation>
+      <expectation>total_queries is 0</expectation>
+      <expectation>No ZeroDivisionError is raised</expectation>
+      <expectation>daily_statistics.average_daily_cost is 0</expectation>
+      <expectation>cost_efficiency_metrics are present (using safe denominators)</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 4,
-      "name": "Trend analysis — insufficient data",
-      "prompt": "Call _analyze_trends() with a daily_costs list containing only one entry: [{'date':'2026-03-06','cost_usd':5.0}].",
-      "expected_output": "The method returns {'trend': 'insufficient_data'} without raising an exception.",
-      "files": [],
-      "expectations": [
-        "The returned dict contains the key 'trend'",
-        "The value of 'trend' is 'insufficient_data'",
-        "No exception is raised"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Trend Analysis
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 5,
-      "name": "Cost forecast — enough data",
-      "prompt": "Using mock_cost_data.json (7 days of data), call _generate_forecast(daily_costs, forecast_days=7) and verify the forecast structure.",
-      "expected_output": "forecast_available=True, 7 daily forecast entries each with date, predicted_cost_usd matching the recent moving average, and confidence='medium'.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "forecast_available is True",
-        "daily_forecasts has exactly 7 entries",
-        "each entry has keys: date, predicted_cost_usd, confidence",
-        "confidence is 'medium' for all entries (7 data points available)",
-        "total_forecast_cost equals predicted_cost_usd * 7",
-        "forecast_method is 'moving_average'",
-        "confidence_note is present as a string"
-      ]
-    },
+  <eval id="2" name="Trend analysis — increasing">
+    <prompt>Using the mock_cost_data.json fixture (costs go from 0.625 on day 1 to 7.5 on day 7, a clear upward trend), call _analyze_trends() and verify the output correctly identifies an increasing trend.</prompt>
+    <expected_output>trend_direction='increasing', a positive slope, correct weekly and monthly projections, and a volatility / cost_stability classification.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>trend_direction is 'increasing'</expectation>
+      <expectation>slope is a positive numeric value greater than 0.1</expectation>
+      <expectation>weekly_projection is approximately daily_average * 7</expectation>
+      <expectation>monthly_projection is approximately daily_average * 30</expectation>
+      <expectation>volatility is a non-negative float</expectation>
+      <expectation>cost_stability is one of 'stable', 'moderate', or 'volatile'</expectation>
+      <expectation>daily_average is approximately 3.464</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 6,
-      "name": "Cost forecast — insufficient data",
-      "prompt": "Call _generate_forecast() with only 2 daily cost entries (below the minimum of 3 required).",
-      "expected_output": "Returns forecast_available=False with a reason field explaining why.",
-      "files": [],
-      "expectations": [
-        "forecast_available is False",
-        "reason field is present and non-empty",
-        "No exception is raised"
-      ]
-    },
+  <eval id="3" name="Trend analysis — high volatility">
+    <prompt>Using mock_volatile_data.json (costs swing wildly between ~0.03 and 6.25 on alternating days), call _analyze_trends() and check that volatility is flagged as 'volatile'.</prompt>
+    <expected_output>cost_stability='volatile' because the coefficient of variation far exceeds 0.5, and trend_direction should be 'stable' or 'decreasing' given the erratic pattern.</expected_output>
+    <files>
+      <file>evals/files/mock_volatile_data.json</file>
+    </files>
+    <expectations>
+      <expectation>volatility is greater than 0.5</expectation>
+      <expectation>cost_stability equals 'volatile'</expectation>
+      <expectation>daily_average is a positive number</expectation>
+      <expectation>weekly_projection and monthly_projection are both present and positive</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 7,
-      "name": "Optimization opportunity — high avg query cost",
-      "prompt": "Call _identify_opportunities() with cost_data where average_cost_per_query=3.50 (above the $2 threshold). total_queries=500, total_cost=1750.",
-      "expected_output": "At least one opportunity of type 'high_average_query_cost' is returned with priority 'medium' (since 3.50 < 5.0), with plausible current_monthly_cost and potential_monthly_savings.",
-      "files": [],
-      "expectations": [
-        "At least one opportunity is returned",
-        "An opportunity with type='high_average_query_cost' is present",
-        "priority is 'medium' (avg cost is 3.50, which is >= 2.0 but < 5.0)",
-        "implementation_effort is 'medium'",
-        "potential_monthly_savings is a positive number",
-        "current_monthly_cost is greater than potential_monthly_savings"
-      ]
-    },
+  <eval id="4" name="Trend analysis — insufficient data">
+    <prompt>Call _analyze_trends() with a daily_costs list containing only one entry: [{'date':'2026-03-06','cost_usd':5.0}].</prompt>
+    <expected_output>The method returns {'trend': 'insufficient_data'} without raising an exception.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The returned dict contains the key 'trend'</expectation>
+      <expectation>The value of 'trend' is 'insufficient_data'</expectation>
+      <expectation>No exception is raised</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 8,
-      "name": "Optimization opportunity — critical single query",
-      "prompt": "Call _identify_opportunities() with cost_data where max_query_cost across daily_costs is 150.0 (a single query costing $150, far above the $100 critical threshold).",
-      "expected_output": "An opportunity of type 'expensive_single_queries' with priority='critical' is returned.",
-      "files": [],
-      "expectations": [
-        "An opportunity with type='expensive_single_queries' is present",
-        "priority is 'critical' (max_single_query > 100)",
-        "implementation_effort is 'high'",
-        "potential_monthly_savings is approximately max_single_query * 0.5 * 30 = 2250.0"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Forecasting
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 9,
-      "name": "Optimization opportunity — volatility",
-      "prompt": "Call _identify_opportunities() using mock_volatile_data.json where daily costs swing dramatically. average_cost_per_query is below $2 and no single query exceeds $20 (use only the volatile swings in daily totals).",
-      "expected_output": "An opportunity of type 'cost_volatility' is identified.",
-      "files": ["evals/files/mock_volatile_data.json"],
-      "expectations": [
-        "An opportunity with type='cost_volatility' is present",
-        "implementation_effort is 'low'",
-        "priority is 'medium'",
-        "description mentions volatility or coefficient"
-      ]
-    },
+  <eval id="5" name="Cost forecast — enough data">
+    <prompt>Using mock_cost_data.json (7 days of data), call _generate_forecast(daily_costs, forecast_days=7) and verify the forecast structure.</prompt>
+    <expected_output>forecast_available=True, 7 daily forecast entries each with date, predicted_cost_usd matching the recent moving average, and confidence='medium'.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>forecast_available is True</expectation>
+      <expectation>daily_forecasts has exactly 7 entries</expectation>
+      <expectation>each entry has keys: date, predicted_cost_usd, confidence</expectation>
+      <expectation>confidence is 'medium' for all entries (7 data points available)</expectation>
+      <expectation>total_forecast_cost equals predicted_cost_usd * 7</expectation>
+      <expectation>forecast_method is 'moving_average'</expectation>
+      <expectation>confidence_note is present as a string</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 10,
-      "name": "No optimization opportunities when costs are low and stable",
-      "prompt": "Call _identify_opportunities() with cost_data where average_cost_per_query=0.05, total_cost=5.0, total_queries=100, all daily max_query_cost values are under $1, and daily costs are stable (low standard deviation).",
-      "expected_output": "Returns an empty list [] — no optimization opportunities are flagged.",
-      "files": [],
-      "expectations": [
-        "The returned list is empty",
-        "No exception is raised"
-      ]
-    },
+  <eval id="6" name="Cost forecast — insufficient data">
+    <prompt>Call _generate_forecast() with only 2 daily cost entries (below the minimum of 3 required).</prompt>
+    <expected_output>Returns forecast_available=False with a reason field explaining why.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>forecast_available is False</expectation>
+      <expectation>reason field is present and non-empty</expectation>
+      <expectation>No exception is raised</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 11,
-      "name": "Cost driver identification — by user",
-      "prompt": "Call _identify_cost_drivers() with daily_costs that include user_email fields: alice@example.com appears 4 times with varying costs summing to $18.00, bob@example.com appears 3 times summing to $5.00. total_cost is 23.0.",
-      "expected_output": "Returns cost drivers sorted by cost descending; alice is listed first with cost_usd=18.0 and percentage_of_total≈78.3%.",
-      "files": [],
-      "expectations": [
-        "The first driver has identifier 'alice@example.com'",
-        "alice's cost_usd is 18.0",
-        "alice's percentage_of_total is approximately 78.3",
-        "bob's driver entry is also present",
-        "All driver entries have: type, identifier, cost_usd, percentage_of_total",
-        "Drivers are sorted by cost_usd descending"
-      ]
-    },
+  <eval id="24" name="Forecast confidence is 'low' with fewer than 7 data points">
+    <prompt>Call _generate_forecast() with only 4 daily cost entries (above the 3-entry minimum but below 7).</prompt>
+    <expected_output>forecast_available=True and each forecast entry has confidence='low'.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>forecast_available is True</expectation>
+      <expectation>All daily_forecasts entries have confidence='low'</expectation>
+      <expectation>daily_forecasts has the requested number of forecast days</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 12,
-      "name": "Cost driver identification — by dataset",
-      "prompt": "Call _identify_cost_drivers() with daily_costs containing dataset_id fields. Dataset 'analytics_prod' totals $30.00, 'raw_events' totals $10.00. total_cost=40.0. No user_email field present.",
-      "expected_output": "Returns dataset-type drivers with analytics_prod first at 75% of total cost.",
-      "files": [],
-      "expectations": [
-        "Drivers list is non-empty",
-        "First driver has type='dataset'",
-        "First driver identifier is 'analytics_prod'",
-        "percentage_of_total for analytics_prod is approximately 75.0",
-        "Maximum 10 drivers are returned"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Optimization Opportunities
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 13,
-      "name": "Data completeness assessment — good data",
-      "prompt": "Call _assess_data_completeness() with cost_data from mock_cost_data.json (7 days of data, total_cost > 0, total_queries > 0).",
-      "expected_output": "Returns a completeness dict with has_cost_data=True, has_query_data=True, date_coverage=7, and data_quality='good'.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "has_cost_data is True",
-        "has_query_data is True",
-        "date_coverage is 7",
-        "data_quality is 'good'",
-        "avg_queries_per_day is a positive number"
-      ]
-    },
+  <eval id="7" name="Optimization opportunity — high avg query cost">
+    <prompt>Call _identify_opportunities() with cost_data where average_cost_per_query=3.50 (above the $2 threshold). total_queries=500, total_cost=1750.</prompt>
+    <expected_output>At least one opportunity of type 'high_average_query_cost' is returned with priority 'medium' (since 3.50 &lt; 5.0), with plausible current_monthly_cost and potential_monthly_savings.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>At least one opportunity is returned</expectation>
+      <expectation>An opportunity with type='high_average_query_cost' is present</expectation>
+      <expectation>priority is 'medium' (avg cost is 3.50, which is &gt;= 2.0 but &lt; 5.0)</expectation>
+      <expectation>implementation_effort is 'medium'</expectation>
+      <expectation>potential_monthly_savings is a positive number</expectation>
+      <expectation>current_monthly_cost is greater than potential_monthly_savings</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 14,
-      "name": "Data completeness assessment — limited data",
-      "prompt": "Call _assess_data_completeness() with cost_data where total_cost=0.0, total_queries=0, and daily_costs is an empty list.",
-      "expected_output": "Returns completeness dict with has_cost_data=False, has_query_data=False, and data_quality='limited'.",
-      "files": [],
-      "expectations": [
-        "has_cost_data is False",
-        "has_query_data is False",
-        "data_quality is 'limited'",
-        "No exception is raised"
-      ]
-    },
+  <eval id="8" name="Optimization opportunity — critical single query">
+    <prompt>Call _identify_opportunities() with cost_data where max_query_cost across daily_costs is 150.0 (a single query costing $150, far above the $100 critical threshold).</prompt>
+    <expected_output>An opportunity of type 'expensive_single_queries' with priority='critical' is returned.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>An opportunity with type='expensive_single_queries' is present</expectation>
+      <expectation>priority is 'critical' (max_single_query &gt; 100)</expectation>
+      <expectation>implementation_effort is 'high'</expectation>
+      <expectation>potential_monthly_savings is approximately max_single_query * 0.5 * 30 = 2250.0</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 15,
-      "name": "Parameter validation — days out of range (too low)",
-      "prompt": "Call execute() with days=0 (below the minimum of 1).",
-      "expected_output": "Returns a JSON string with success=False and an error message explaining that days must be between 1 and 90.",
-      "files": [],
-      "expectations": [
-        "The returned JSON has success=False",
-        "error field is present and non-empty",
-        "error_type is 'ValueError'",
-        "The error message references the valid range (1–90)"
-      ]
-    },
+  <eval id="9" name="Optimization opportunity — volatility">
+    <prompt>Call _identify_opportunities() using mock_volatile_data.json where daily costs swing dramatically. average_cost_per_query is below $2 and no single query exceeds $20 (use only the volatile swings in daily totals).</prompt>
+    <expected_output>An opportunity of type 'cost_volatility' is identified.</expected_output>
+    <files>
+      <file>evals/files/mock_volatile_data.json</file>
+    </files>
+    <expectations>
+      <expectation>An opportunity with type='cost_volatility' is present</expectation>
+      <expectation>implementation_effort is 'low'</expectation>
+      <expectation>priority is 'medium'</expectation>
+      <expectation>description mentions volatility or coefficient</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 16,
-      "name": "Parameter validation — days out of range (too high)",
-      "prompt": "Call execute() with days=91 (above the maximum of 90).",
-      "expected_output": "Returns JSON with success=False and a ValueError about the valid range.",
-      "files": [],
-      "expectations": [
-        "The returned JSON has success=False",
-        "error_type is 'ValueError'",
-        "suggestion field is present"
-      ]
-    },
+  <eval id="10" name="No optimization opportunities when costs are low and stable">
+    <prompt>Call _identify_opportunities() with cost_data where average_cost_per_query=0.05, total_cost=5.0, total_queries=100, all daily max_query_cost values are under $1, and daily costs are stable (low standard deviation).</prompt>
+    <expected_output>Returns an empty list [] — no optimization opportunities are flagged.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The returned list is empty</expectation>
+      <expectation>No exception is raised</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 17,
-      "name": "Full execute output structure",
-      "prompt": "Simulate a successful execute() call by mocking _fetch_cost_data() to return the contents of mock_cost_data.json, then call execute(days=7, include_predictions=True, group_by=['date'], include_query_details=False). Verify the top-level output structure.",
-      "expected_output": "A valid JSON string with keys: success, project_id, analysis_period, cost_analysis, metadata.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "Output is valid JSON",
-        "success is True",
-        "project_id is a non-empty string",
-        "analysis_period contains keys: days, start_date, end_date",
-        "analysis_period.days equals 7",
-        "cost_analysis contains keys: cost_summary, daily_breakdown, trends, top_cost_drivers, optimization_opportunities",
-        "cost_analysis.cost_forecast is present (include_predictions=True)",
-        "metadata contains: generated_at, total_queries_analyzed, data_completeness"
-      ]
-    },
+  <eval id="25" name="High-cost single query threshold boundary — $100 boundary">
+    <prompt>Call _identify_opportunities() with a max_query_cost of exactly $100.0 across the daily_costs (right at the 'critical' boundary). Confirm priority logic: &gt;$100 is 'critical', so $100 should be 'high'.</prompt>
+    <expected_output>Opportunity type 'expensive_single_queries' is present with priority='high' (the threshold is strictly greater than $100 for critical).</expected_output>
+    <files/>
+    <expectations>
+      <expectation>An opportunity with type='expensive_single_queries' is present</expectation>
+      <expectation>priority is 'high' (not 'critical') when max_single_query equals exactly 100</expectation>
+      <expectation>description mentions the $100.0 single query cost</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 18,
-      "name": "Full execute — predictions excluded",
-      "prompt": "Simulate a successful execute() call (mock _fetch_cost_data with mock_cost_data.json) with include_predictions=False.",
-      "expected_output": "Result JSON does not contain a cost_forecast key in cost_analysis.",
-      "files": ["evals/files/mock_cost_data.json"],
-      "expectations": [
-        "Output is valid JSON",
-        "success is True",
-        "cost_analysis does NOT contain the key 'cost_forecast'"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Cost Drivers
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 19,
-      "name": "Default group_by defaults to date",
-      "prompt": "Call execute() with group_by=None (not provided). Verify internally that group_by defaults to ['date'] and the resulting daily_breakdown entries include a 'date' field.",
-      "expected_output": "execute() uses ['date'] as the default group_by and the SQL query groups by DATE(creation_time).",
-      "files": [],
-      "expectations": [
-        "The default group_by is ['date'] when None is passed",
-        "daily_breakdown entries each contain a 'date' key"
-      ]
-    },
+  <eval id="11" name="Cost driver identification — by user">
+    <prompt>Call _identify_cost_drivers() with daily_costs that include user_email fields: alice@example.com appears 4 times with varying costs summing to $18.00, bob@example.com appears 3 times summing to $5.00. total_cost is 23.0.</prompt>
+    <expected_output>Returns cost drivers sorted by cost descending; alice is listed first with cost_usd=18.0 and percentage_of_total≈78.3%.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The first driver has identifier 'alice@example.com'</expectation>
+      <expectation>alice's cost_usd is 18.0</expectation>
+      <expectation>alice's percentage_of_total is approximately 78.3</expectation>
+      <expectation>bob's driver entry is also present</expectation>
+      <expectation>All driver entries have: type, identifier, cost_usd, percentage_of_total</expectation>
+      <expectation>Drivers are sorted by cost_usd descending</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 20,
-      "name": "SQL query construction — query_type grouping",
-      "prompt": "Inspect the SQL query produced by _fetch_cost_data() when group_by=['query_type']. Verify it includes a CASE WHEN statement that classifies SELECT, INSERT, CREATE, UPDATE, DELETE, and OTHER.",
-      "expected_output": "The generated SQL contains a CASE WHEN block covering all 5 DML/DDL types plus an ELSE 'OTHER' clause.",
-      "files": [],
-      "expectations": [
-        "SQL contains 'CASE'",
-        "SQL contains \"WHEN query LIKE 'SELECT%' THEN 'SELECT'\"",
-        "SQL contains \"WHEN query LIKE 'INSERT%' THEN 'INSERT'\"",
-        "SQL contains \"WHEN query LIKE 'CREATE%' THEN 'CREATE'\"",
-        "SQL contains \"WHEN query LIKE 'DELETE%' THEN 'DELETE'\"",
-        "SQL contains \"ELSE 'OTHER'\""
-      ]
-    },
+  <eval id="12" name="Cost driver identification — by dataset">
+    <prompt>Call _identify_cost_drivers() with daily_costs containing dataset_id fields. Dataset 'analytics_prod' totals $30.00, 'raw_events' totals $10.00. total_cost=40.0. No user_email field present.</prompt>
+    <expected_output>Returns dataset-type drivers with analytics_prod first at 75% of total cost.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>Drivers list is non-empty</expectation>
+      <expectation>First driver has type='dataset'</expectation>
+      <expectation>First driver identifier is 'analytics_prod'</expectation>
+      <expectation>percentage_of_total for analytics_prod is approximately 75.0</expectation>
+      <expectation>Maximum 10 drivers are returned</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 21,
-      "name": "Pricing constant sanity check",
-      "prompt": "Verify that the on_demand_price_per_tb constant is 6.25 and that cost_usd in the SQL is computed as total_bytes_processed / POW(10,12) * 6.25.",
-      "expected_output": "on_demand_price_per_tb = 6.25 and the SQL formula reflects BigQuery's standard on-demand pricing of $6.25 per TB.",
-      "files": [],
-      "expectations": [
-        "on_demand_price_per_tb equals 6.25",
-        "The SQL uses POW(10, 12) to convert bytes to terabytes",
-        "Cost formula multiplies bytes/TB by the pricing constant"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Data Completeness
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 22,
-      "name": "BigQuery error surfaces as success=False",
-      "prompt": "Simulate a GoogleCloudError being raised inside execute() (e.g., by patching _fetch_cost_data to raise GoogleCloudError('Permission denied')). Verify the error is caught and returned gracefully.",
-      "expected_output": "JSON with success=False, an error string containing the exception message, and a suggestion field.",
-      "files": [],
-      "expectations": [
-        "success is False",
-        "error field contains the exception message",
-        "error_type is 'GoogleCloudError'",
-        "suggestion field is present and non-empty"
-      ]
-    },
+  <eval id="13" name="Data completeness assessment — good data">
+    <prompt>Call _assess_data_completeness() with cost_data from mock_cost_data.json (7 days of data, total_cost &gt; 0, total_queries &gt; 0).</prompt>
+    <expected_output>Returns a completeness dict with has_cost_data=True, has_query_data=True, date_coverage=7, and data_quality='good'.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>has_cost_data is True</expectation>
+      <expectation>has_query_data is True</expectation>
+      <expectation>date_coverage is 7</expectation>
+      <expectation>data_quality is 'good'</expectation>
+      <expectation>avg_queries_per_day is a positive number</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 23,
-      "name": "Zero-cost period handling",
-      "prompt": "Call _generate_cost_summary() with cost_data where total_cost=0.0, total_queries=0, and daily_costs is an empty list.",
-      "expected_output": "Returns a valid summary dict with all zero values; no ZeroDivisionError is raised.",
-      "files": [],
-      "expectations": [
-        "total_cost_usd is 0.0",
-        "total_queries is 0",
-        "No ZeroDivisionError is raised",
-        "daily_statistics.average_daily_cost is 0",
-        "cost_efficiency_metrics are present (using safe denominators)"
-      ]
-    },
+  <eval id="14" name="Data completeness assessment — limited data">
+    <prompt>Call _assess_data_completeness() with cost_data where total_cost=0.0, total_queries=0, and daily_costs is an empty list.</prompt>
+    <expected_output>Returns completeness dict with has_cost_data=False, has_query_data=False, and data_quality='limited'.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>has_cost_data is False</expectation>
+      <expectation>has_query_data is False</expectation>
+      <expectation>data_quality is 'limited'</expectation>
+      <expectation>No exception is raised</expectation>
+    </expectations>
+  </eval>
 
-    {
-      "id": 24,
-      "name": "Forecast confidence is 'low' with fewer than 7 data points",
-      "prompt": "Call _generate_forecast() with only 4 daily cost entries (above the 3-entry minimum but below 7).",
-      "expected_output": "forecast_available=True and each forecast entry has confidence='low'.",
-      "files": [],
-      "expectations": [
-        "forecast_available is True",
-        "All daily_forecasts entries have confidence='low'",
-        "daily_forecasts has the requested number of forecast days"
-      ]
-    },
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: Parameter Validation and Error Handling
+       ═══════════════════════════════════════════════════ -->
 
-    {
-      "id": 25,
-      "name": "High-cost single query threshold boundary — $100 boundary",
-      "prompt": "Call _identify_opportunities() with a max_query_cost of exactly $100.0 across the daily_costs (right at the 'critical' boundary). Confirm priority logic: >$100 is 'critical', so $100 should be 'high'.",
-      "expected_output": "Opportunity type 'expensive_single_queries' is present with priority='high' (the threshold is strictly greater than $100 for critical).",
-      "files": [],
-      "expectations": [
-        "An opportunity with type='expensive_single_queries' is present",
-        "priority is 'high' (not 'critical') when max_single_query equals exactly 100",
-        "description mentions the $100.0 single query cost"
-      ]
-    }
+  <eval id="15" name="Parameter validation — days out of range (too low)">
+    <prompt>Call execute() with days=0 (below the minimum of 1).</prompt>
+    <expected_output>Returns a JSON string with success=False and an error message explaining that days must be between 1 and 90.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The returned JSON has success=False</expectation>
+      <expectation>error field is present and non-empty</expectation>
+      <expectation>error_type is 'ValueError'</expectation>
+      <expectation>The error message references the valid range (1–90)</expectation>
+    </expectations>
+  </eval>
 
-  ]
-}
+  <eval id="16" name="Parameter validation — days out of range (too high)">
+    <prompt>Call execute() with days=91 (above the maximum of 90).</prompt>
+    <expected_output>Returns JSON with success=False and a ValueError about the valid range.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The returned JSON has success=False</expectation>
+      <expectation>error_type is 'ValueError'</expectation>
+      <expectation>suggestion field is present</expectation>
+    </expectations>
+  </eval>
+
+  <eval id="17" name="Full execute output structure">
+    <prompt>Simulate a successful execute() call by mocking _fetch_cost_data() to return the contents of mock_cost_data.json, then call execute(days=7, include_predictions=True, group_by=['date'], include_query_details=False). Verify the top-level output structure.</prompt>
+    <expected_output>A valid JSON string with keys: success, project_id, analysis_period, cost_analysis, metadata.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>Output is valid JSON</expectation>
+      <expectation>success is True</expectation>
+      <expectation>project_id is a non-empty string</expectation>
+      <expectation>analysis_period contains keys: days, start_date, end_date</expectation>
+      <expectation>analysis_period.days equals 7</expectation>
+      <expectation>cost_analysis contains keys: cost_summary, daily_breakdown, trends, top_cost_drivers, optimization_opportunities</expectation>
+      <expectation>cost_analysis.cost_forecast is present (include_predictions=True)</expectation>
+      <expectation>metadata contains: generated_at, total_queries_analyzed, data_completeness</expectation>
+    </expectations>
+  </eval>
+
+  <eval id="18" name="Full execute — predictions excluded">
+    <prompt>Simulate a successful execute() call (mock _fetch_cost_data with mock_cost_data.json) with include_predictions=False.</prompt>
+    <expected_output>Result JSON does not contain a cost_forecast key in cost_analysis.</expected_output>
+    <files>
+      <file>evals/files/mock_cost_data.json</file>
+    </files>
+    <expectations>
+      <expectation>Output is valid JSON</expectation>
+      <expectation>success is True</expectation>
+      <expectation>cost_analysis does NOT contain the key 'cost_forecast'</expectation>
+    </expectations>
+  </eval>
+
+  <eval id="19" name="Default group_by defaults to date">
+    <prompt>Call execute() with group_by=None (not provided). Verify internally that group_by defaults to ['date'] and the resulting daily_breakdown entries include a 'date' field.</prompt>
+    <expected_output>execute() uses ['date'] as the default group_by and the SQL query groups by DATE(creation_time).</expected_output>
+    <files/>
+    <expectations>
+      <expectation>The default group_by is ['date'] when None is passed</expectation>
+      <expectation>daily_breakdown entries each contain a 'date' key</expectation>
+    </expectations>
+  </eval>
+
+  <eval id="21" name="Pricing constant sanity check">
+    <prompt>Verify that the on_demand_price_per_tb constant is 6.25 and that cost_usd in the SQL is computed as total_bytes_processed / POW(10,12) * 6.25.</prompt>
+    <expected_output>on_demand_price_per_tb = 6.25 and the SQL formula reflects BigQuery's standard on-demand pricing of $6.25 per TB.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>on_demand_price_per_tb equals 6.25</expectation>
+      <expectation>The SQL uses POW(10, 12) to convert bytes to terabytes</expectation>
+      <expectation>Cost formula multiplies bytes/TB by the pricing constant</expectation>
+    </expectations>
+  </eval>
+
+  <eval id="22" name="BigQuery error surfaces as success=False">
+    <prompt>Simulate a GoogleCloudError being raised inside execute() (e.g., by patching _fetch_cost_data to raise GoogleCloudError('Permission denied')). Verify the error is caught and returned gracefully.</prompt>
+    <expected_output>JSON with success=False, an error string containing the exception message, and a suggestion field.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>success is False</expectation>
+      <expectation>error field contains the exception message</expectation>
+      <expectation>error_type is 'GoogleCloudError'</expectation>
+      <expectation>suggestion field is present and non-empty</expectation>
+    </expectations>
+  </eval>
+
+  <!-- ═══════════════════════════════════════════════════
+       CATEGORY: SQL Query Construction
+       ═══════════════════════════════════════════════════ -->
+
+  <eval id="20" name="SQL query construction — query_type grouping">
+    <prompt>Inspect the SQL query produced by _fetch_cost_data() when group_by=['query_type']. Verify it includes a CASE WHEN statement that classifies SELECT, INSERT, CREATE, UPDATE, DELETE, and OTHER.</prompt>
+    <expected_output>The generated SQL contains a CASE WHEN block covering all 5 DML/DDL types plus an ELSE 'OTHER' clause.</expected_output>
+    <files/>
+    <expectations>
+      <expectation>SQL contains 'CASE'</expectation>
+      <expectation>SQL contains "WHEN query LIKE 'SELECT%' THEN 'SELECT'"</expectation>
+      <expectation>SQL contains "WHEN query LIKE 'INSERT%' THEN 'INSERT'"</expectation>
+      <expectation>SQL contains "WHEN query LIKE 'CREATE%' THEN 'CREATE'"</expectation>
+      <expectation>SQL contains "WHEN query LIKE 'DELETE%' THEN 'DELETE'"</expectation>
+      <expectation>SQL contains "ELSE 'OTHER'"</expectation>
+    </expectations>
+  </eval>
+
+</evals>
