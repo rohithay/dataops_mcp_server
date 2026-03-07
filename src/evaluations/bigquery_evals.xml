@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluations>
+  <description>
+    Critical path evaluations for GetBigQueryCostsTool. Targets four failure modes
+    an experienced AI engineer would flag before production: parameter boundary
+    validation, silent group_by failures, statistics crash on empty datasets, and
+    trend regression accuracy. Ordered by likelihood of hitting production undetected.
+  </description>
+
+  <!-- ============================================================
+       EVAL 001 — DAYS PARAMETER BOUNDARY VALIDATION
+       The validation exists but it lives inside the outer try/except,
+       meaning ANY exception — including ValueError — gets swallowed
+       and returned as a generic error JSON. Boundary values (0, 1,
+       90, 91) must reject or accept correctly and return clean,
+       distinguishable error responses, not generic crash output.
+       ============================================================ -->
+  <evaluation id="eval_001">
+    <name>Days Parameter Boundary Validation</name>
+    <description>
+      Verify that the days parameter is correctly validated at every boundary: values
+      below 1 and above 90 must be rejected before any BigQuery call is made, values
+      at exactly 1 and 90 must be accepted. Confirm the error response is a clean
+      validation message, not a raw exception dump.
+    </description>
+    <scenario>
+      Five separate calls to execute() covering the full boundary surface:
+
+        Case A — Below minimum:  days=0
+        Case B — At minimum:     days=1     (valid — must succeed)
+        Case C — At maximum:     days=90    (valid — must succeed)
+        Case D — Above maximum:  days=91
+        Case E — Far out:        days=365
+
+      A call spy is placed on bq_client.query() to confirm no API calls
+      are made for the invalid cases.
+    </scenario>
+    <expected_steps>
+      1. Cases A, D, E: execute() runs "if days &lt; 1 or days &gt; 90" check
+         - ValueError("Days must be between 1 and 90") is raised
+         - Caught by outer except block
+         - Returns success: false with the validation message
+         - bq_client.query() never called
+
+      2. Cases B and C: validation passes
+         - _fetch_cost_data() is called with the correct days value
+         - INFORMATION_SCHEMA query is built with the correct INTERVAL
+         - Returns success: true (assuming mock returns valid data)
+    </expected_steps>
+    <success_criteria>
+      - Cases A, D, E: success = false
+      - Cases A, D, E: error message references the valid range (1–90), not a stack trace
+      - Cases A, D, E: bq_client.query() call count = 0
+      - Cases B and C: success = true
+      - Cases B and C: analysis_period.days matches the input value exactly
+      - No response for any case contains Python class names or file paths
+    </success_criteria>
+  </evaluation>
+
+  <!-- ============================================================
+       EVAL 002 — SILENT group_by FAILURE ON UNKNOWN DIMENSIONS
+       group_by values are checked with "if X in group_by" conditionals.
+       An unrecognised dimension like "region" or "table" is silently
+       ignored — no error, no warning, just missing data in the response.
+       The caller has no idea their grouping request was dropped.
+       This is a silent correctness bug, not a crash.
+       ============================================================ -->
+  <evaluation id="eval_002">
+    <name>group_by — Unknown Dimension Is Silently Dropped</name>
+    <description>
+      Verify the tool's behaviour when group_by contains a dimension it does not
+      recognise. The current implementation silently ignores unknown values and falls
+      back to the default date grouping. This eval documents and confirms that
+      behaviour — and that it does NOT crash — while flagging that the caller
+      receives no signal that their requested dimension was ignored.
+    </description>
+    <scenario>
+      Three calls to execute() with different group_by inputs:
+
+        Case A — All valid:       group_by=["date", "user"]
+        Case B — Partially valid: group_by=["date", "region"]   (region is unknown)
+        Case C — Fully unknown:   group_by=["region", "table"]  (both unknown)
+
+      bq_client.query() is mocked to return 3 rows of sample cost data.
+    </scenario>
+    <expected_steps>
+      1. Case A: both "date" and "user" are handled by if-blocks
+         - select_columns and group_columns both contain two entries
+         - SQL includes both DATE(creation_time) and user_email
+         - cost_drivers in response includes "user" type entries
+
+      2. Case B: "date" matches, "region" does not
+         - Only "date" appends to select_columns and group_columns
+         - SQL is built as if group_by=["date"] was passed
+         - No error or warning key appears in the response
+         - Response is success: true with date-only grouping
+
+      3. Case C: neither dimension matches any if-block
+         - group_columns and select_columns both remain empty
+         - Default fallback activates: DATE(creation_time) grouping
+         - Response is success: true with date grouping
+         - No indication to caller that both requested dimensions were dropped
+    </expected_steps>
+    <success_criteria>
+      - All three cases return success: true (no crash)
+      - Case A: daily_breakdown entries contain user_email field
+      - Case B: daily_breakdown entries do NOT contain a "region" field
+      - Case B: response is structurally identical to group_by=["date"]
+      - Case C: daily_breakdown entries contain a "date" field (fallback activated)
+      - No case produces an error key in the response for unknown dimensions
+      NOTE: Cases B and C represent a known silent failure. This eval documents
+      the current behaviour. The correct fix is to validate group_by values
+      against the known set and return an error for unrecognised dimensions.
+    </success_criteria>
+  </evaluation>
+
+  <!-- ============================================================
+       EVAL 003 — CRASH ON EMPTY DATASET (statistics.mean OF [])
+       This is the most dangerous bug in the file. When a project has
+       no query history — a new project, a project under a new billing
+       account, or a project that ran no queries in the window — the
+       INFORMATION_SCHEMA query returns zero rows.
+       _fetch_cost_data() returns daily_costs=[], total_cost=0.
+       _generate_cost_summary() then calls statistics.mean([]) which
+       raises StatisticsError: mean requires at least one data point.
+       This crashes execute() and leaks the exception via the outer
+       except block. A brand-new customer onboarding hits this on
+       their very first call.
+       ============================================================ -->
+  <evaluation id="eval_003">
+    <name>Empty Dataset — statistics.mean([]) Crash on Zero Query History</name>
+    <description>
+      Verify the tool handles zero-row INFORMATION_SCHEMA results gracefully.
+      When no queries exist in the requested window, _generate_cost_summary() calls
+      statistics.mean([]) which raises StatisticsError. This eval confirms the crash
+      exists in the current implementation and defines the correct expected behaviour
+      after the fix.
+    </description>
+    <scenario>
+      bq_client.query() is mocked to return an empty iterator (zero rows),
+      simulating a project with no query history in the requested window.
+
+        Call: execute(days=7, include_predictions=True)
+
+      This triggers the full pipeline:
+        _fetch_cost_data()          → daily_costs=[], total_cost=0, total_queries=0
+        _generate_cost_summary()    → statistics.mean([]) → StatisticsError CRASH
+        _analyze_trends()           → would return insufficient_data (never reached)
+        _generate_forecast()        → would return forecast_available: false (never reached)
+    </scenario>
+    <expected_steps>
+      Current (broken) behaviour:
+      1. _fetch_cost_data() returns daily_costs=[]
+      2. _generate_cost_summary() calls: costs_only = []
+      3. statistics.mean([]) raises StatisticsError
+      4. Exception propagates up to execute() outer except block
+      5. Returns success: false with StatisticsError message and class name leaked
+
+      Expected (fixed) behaviour:
+      1. _fetch_cost_data() returns daily_costs=[], total_cost=0, total_queries=0
+      2. _generate_cost_summary() checks "if costs_only" before calling statistics.mean()
+      3. daily_statistics fields default to 0 when costs_only is empty
+      4. _analyze_trends() receives [] and returns trend: "insufficient_data"
+      5. _generate_forecast() receives [] and returns forecast_available: false
+      6. execute() returns success: true with zero-value summary and no crash
+    </expected_steps>
+    <success_criteria>
+      After fix is applied:
+      - success = true (empty data is valid state, not an error)
+      - cost_summary.total_cost_usd = 0
+      - cost_summary.total_queries = 0
+      - cost_summary.daily_statistics.average_daily_cost = 0
+      - cost_summary.daily_statistics.daily_std_deviation = 0
+      - cost_analysis.trends.trend = "insufficient_data" or equivalent
+      - cost_analysis.cost_forecast.forecast_available = false
+      - No StatisticsError or class name in any response field
+      - metadata.data_completeness.data_quality = "limited"
+
+      Before fix (documenting current crash):
+      - success = false
+      - error field contains "mean requires at least one data point"
+      - error_type field contains "StatisticsError"
+    </success_criteria>
+  </evaluation>
+
+  <!-- ============================================================
+       EVAL 004 — TREND REGRESSION DIRECTION ACCURACY
+       _analyze_trends() implements manual linear regression to classify
+       cost direction as "increasing", "decreasing", or "stable".
+       The slope threshold is hardcoded at 0.1. This eval verifies the
+       regression math is correct and the thresholds produce sensible
+       classifications across three distinct patterns: clear upward
+       trend, clear downward trend, and genuinely flat costs.
+       A wrong trend direction in a cost report directly misleads
+       finance and engineering leadership.
+       ============================================================ -->
+  <evaluation id="eval_004">
+    <name>Trend Regression — Direction Classification Accuracy</name>
+    <description>
+      Verify that _analyze_trends() correctly computes the linear regression slope
+      and maps it to the right trend direction across three distinct cost patterns.
+      Also verify that projections (weekly, monthly) are computed from the correct
+      daily average, and that volatility classification reflects the actual spread
+      of the input data.
+    </description>
+    <scenario>
+      _analyze_trends() is called directly with three hand-crafted daily_costs lists:
+
+        Case A — Clear upward trend (slope should be strongly positive):
+          daily_costs = [
+            {"date": "2024-01-01", "cost_usd": 10.0},
+            {"date": "2024-01-02", "cost_usd": 15.0},
+            {"date": "2024-01-03", "cost_usd": 20.0},
+            {"date": "2024-01-04", "cost_usd": 25.0},
+            {"date": "2024-01-05", "cost_usd": 30.0}
+          ]
+          Expected slope: +5.0/day → trend_direction = "increasing"
+
+        Case B — Clear downward trend (slope should be strongly negative):
+          daily_costs = [
+            {"date": "2024-01-01", "cost_usd": 50.0},
+            {"date": "2024-01-02", "cost_usd": 40.0},
+            {"date": "2024-01-03", "cost_usd": 30.0},
+            {"date": "2024-01-04", "cost_usd": 20.0},
+            {"date": "2024-01-05", "cost_usd": 10.0}
+          ]
+          Expected slope: -10.0/day → trend_direction = "decreasing"
+
+        Case C — Flat / stable costs (slope near zero):
+          daily_costs = [
+            {"date": "2024-01-01", "cost_usd": 20.0},
+            {"date": "2024-01-02", "cost_usd": 20.1},
+            {"date": "2024-01-03", "cost_usd": 19.9},
+            {"date": "2024-01-04", "cost_usd": 20.0},
+            {"date": "2024-01-05", "cost_usd": 20.05}
+          ]
+          Expected slope: ~0.0 → trend_direction = "stable"
+
+        Case D — Single data point (edge case):
+          daily_costs = [{"date": "2024-01-01", "cost_usd": 20.0}]
+          Expected: trend = "insufficient_data" (n &lt; 2 guard)
+    </expected_steps>
+    <expected_steps>
+      1. Case A: sort dates, build cost_sequence [10, 15, 20, 25, 30]
+         - Linear regression: slope = 5.0
+         - slope &gt; 0.1 → trend_direction = "increasing"
+         - daily_avg = 20.0, weekly_projection = 140.0, monthly_projection = 600.0
+         - volatility = stdev([10,15,20,25,30]) / 20.0 = ~0.37 → "moderate"
+
+      2. Case B: cost_sequence [50, 40, 30, 20, 10]
+         - Linear regression: slope = -10.0
+         - slope &lt; -0.1 → trend_direction = "decreasing"
+         - daily_avg = 30.0, weekly_projection = 210.0, monthly_projection = 900.0
+
+      3. Case C: cost_sequence [20.0, 20.1, 19.9, 20.0, 20.05]
+         - Linear regression: slope ≈ 0.0
+         - -0.1 &lt;= slope &lt;= 0.1 → trend_direction = "stable"
+         - volatility very low → cost_stability = "stable"
+
+      4. Case D: n = 1, len(cost_sequence) &lt; 2 check fires
+         - Returns {"trend": "insufficient_data"}
+    </expected_steps>
+    <success_criteria>
+      - Case A: trend_direction = "increasing", slope &gt; 0.1
+      - Case A: weekly_projection within 1% of 140.0, monthly_projection within 1% of 600.0
+      - Case A: cost_stability = "moderate" (volatility ~0.37, between 0.2 and 0.5)
+      - Case B: trend_direction = "decreasing", slope &lt; -0.1
+      - Case C: trend_direction = "stable", abs(slope) &lt;= 0.1
+      - Case C: cost_stability = "stable" (very low volatility)
+      - Case D: return value contains key "trend" with value "insufficient_data"
+      - No case raises an exception
+    </success_criteria>
+  </evaluation>
+
+</evaluations>
