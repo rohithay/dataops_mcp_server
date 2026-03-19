@@ -19,7 +19,7 @@
 
 ### 🛠️ Setup Instructions
 1. To get Claude for Desktop and how to add an MCP server, access [this link](https://modelcontextprotocol.io/quickstart/user). 
-2. Add the following code to your MCP client configuration. 
+2. a. Add the following code to your MCP client configuration. 
 > [!NOTE]
 > The GCP Cost Optimization MCP server uses the default GCP project from your ADC by default. Specify a value in `GCP_PROJECT_ID` if you want to use a different project. Similarly, adjust the `GCP_REGION` configuration values as per your setup.
 ```json
@@ -39,6 +39,17 @@
       },
       "disabled": false,
       "autoApprove": []
+    }
+  }
+}
+```
+2. b. Add the following code to your MCP client configuration for Gradio integration. 
+```json
+{
+  "mcpServers": {
+    "gcp-cost-optimization": {
+    "url": "https://yrohitha-dataops-mcp.hf.space/gradio_api/mcp/sse"
+"
     }
   }
 }
